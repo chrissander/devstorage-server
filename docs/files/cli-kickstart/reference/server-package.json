@@ -1,0 +1,22 @@
+{
+  "name": "dev-storage-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Project-scoped file storage API and synchronization CLI backed by S3",
+  "engines": { "node": ">=22" },
+  "bin": { "dev-storage": "./src/cli.js" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --env-file-if-exists=.env --watch src/server.js",
+    "cli": "node --env-file-if-exists=.env src/cli.js",
+    "check": "node scripts/check-syntax.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.900.0",
+    "@fastify/cors": "^11.0.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "fastify": "^5.10.0"
+  }
+}
