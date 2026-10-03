@@ -71,7 +71,10 @@ müssen dort nicht gesetzt werden.
 `src/server.js` ist der einzige automatisch erkennbare Server-Einstieg und
 importiert Fastify direkt. Die App-Erzeugung liegt in `src/http-app.js`, damit
 Vercel sie nicht als separaten Einstieg auswählt. Lokale Startskripte verwenden
-weiterhin `src/server.js`. Es ist kein eigener Build-Schritt erforderlich.
+weiterhin `src/server.js`. Der Einstieg wartet nicht auf `listen()`: Vercel
+fängt diesen Aufruf während des Modulimports ab und startet den Server erst
+anschließend. Ein Top-Level-`await app.listen(...)` würde den Start blockieren.
+Startfehler werden weiterhin behandelt. Es ist kein eigener Build-Schritt erforderlich.
 Siehe [Fastify auf Vercel](https://vercel.com/docs/frameworks/backend/fastify).
 Die weiter unten beschriebenen Einschränkungen bei mehreren Instanzen bleiben
 bestehen; ein erfolgreiches Vercel-Deployment wurde lokal nicht nachgewiesen.
@@ -179,6 +182,43 @@ erscheinen bei erfolgreicher Anlage/Rotation und in `projects list` für Admins.
 Token in CLI beziehungsweise Consumer übernehmen. API-Kommandos laden keine
 S3-Konfiguration. Push/Pull und Datei-CRUD verwenden ausschließlich die API;
 nur `workspace init` greift direkt auf den Bucket zu.
+
+### Projekte und Tokens auflisten
+
+```bash
+npm run cli -- projects list
+```
+
+Bei verfügbarer `dev-storage`-Installation geht auch:
+
+```bash
+dev-storage projects list
+```
+
+Benötigt `DEV_STORAGE_API_URL` (Server-URL ohne `/v1`) und
+`DEV_STORAGE_ADMIN_TOKEN` (aktueller Admin-Token). `npm run cli` lädt diese
+aus `.env`; beim direkten `dev-storage`-Aufruf müssen sie in der Umgebung
+gesetzt sein. Ein Projekt-Token reicht für diesen Befehl nicht aus.
+
+Der Befehl ruft `GET /v1/projects` auf und gibt alle Projekte alphabetisch
+sortiert als JSON aus, einschließlich ihres aktuellen Projekt-Tokens:
+
+```json
+{
+  "projects": [
+    {
+      "projectId": "test",
+      "state": "active",
+      "token": "<aktueller-projekt-token>"
+    }
+  ]
+}
+```
+
+`state` ist `active` oder bei einer noch nicht abgeschlossenen Löschung
+`deleting`. Ohne Projekte lautet die Antwort `{"projects":[]}`. Das Feld
+`token` enthält den Projekt-Token, nicht den Admin-Token. Nach einer Rotation
+zeigt ein erneuter Aufruf den neuen Projekt-Token an.
 
 ## Datei-CRUD und Push/Pull
 

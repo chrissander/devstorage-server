@@ -94,3 +94,14 @@ Beschreibungsänderung. Ausschließlich `test/profile.json` und seine Descriptio
 sowie die Description von `test/profile.schema.json` wurden verwendet. Der
 ursprüngliche Dateiinhalt wurde bytegenau und beide Beschreibungen auf ihren
 ursprünglichen Stand zurückgesetzt. Projekt-Revisionen haben sich dabei geändert.
+
+## Vercel-Start: Import darf nicht auf listen warten
+
+Am 03.10.2026 hingen sowohl `/` als auch `/v1/projects` des Deployments länger
+als die 20 Sekunden des Diagnose-Timeouts. Die CLI hatte die korrekte URL geladen.
+Der lokale Nachbau des Vercel-Listen-Interceptors reproduzierte einen blockierten
+Modulimport durch `await app.listen(...)`. Nach Umstellung auf `listen().catch(...)`
+wurde der Import abgeschlossen und der Server erfolgreich erfasst. Lokaler
+Socket-Start mit HTTP-Antwort und Fehlerbehandlung bei belegtem Port geprüft.
+Die Behebung im echten Deployment muss nach Veröffentlichung bestätigt werden.
+Referenz: [Vercel Node-Runtime](https://github.com/vercel/vercel/blob/main/packages/node/src/serverless-functions/serverless-handler.mts).
