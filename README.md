@@ -460,6 +460,13 @@ geht auch seine Beschreibung verloren. Neue Pfade starten ohne Beschreibung.
 
 ### ETags und Beispielaufrufe
 
+Die CLI fordert Antworten mit `Accept-Encoding: identity` an, damit ein CDN
+den ETag durch Komprimierung nicht in einen schwachen ETag (`W/"…"`) umwandelt.
+Die API setzt zusätzlich `Cache-Control: no-store, no-transform`. Eigene
+HTTP-Clients sollten bei revisionsabhängigen Aufrufen ebenfalls unkomprimierte
+Antworten anfordern. Schwache ETags nicht durch Abschneiden von `W/` umdeuten;
+eine unveränderte Revision erneut laden. Echte Konflikte bleiben `412`.
+
 Datei-/Schema-Listen, einzelne Dateien und Snapshots liefern die aktuelle
 Projektmetadaten-Revision als `ETag`. Datei-/Schema-PUT, -PATCH und -DELETE sowie
 Snapshot-PUT benötigen diesen Wert unverändert im Header `If-Match`,

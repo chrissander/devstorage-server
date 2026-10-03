@@ -30,6 +30,9 @@ async function request(method, path, { body, bytes, etag } = {}) {
       method, redirect: 'error',
       headers: {
         Authorization: `Bearer ${config.token}`,
+        // Keep revision ETags strong: CDN compression can prepend W/ and make
+        // the returned value unusable for the next If-Match request.
+        'Accept-Encoding': 'identity',
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(bytes !== undefined ? { 'Content-Type': 'application/octet-stream' } : {}),
         ...(etag ? { 'If-Match': etag } : {}),

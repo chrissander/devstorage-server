@@ -105,3 +105,17 @@ wurde der Import abgeschlossen und der Server erfolgreich erfasst. Lokaler
 Socket-Start mit HTTP-Antwort und Fehlerbehandlung bei belegtem Port geprüft.
 Die Behebung im echten Deployment muss nach Veröffentlichung bestätigt werden.
 Referenz: [Vercel Node-Runtime](https://github.com/vercel/vercel/blob/main/packages/node/src/serverless-functions/serverless-handler.mts).
+
+## Push-Revision hinter Vercel-Komprimierung
+
+Am 03.10.2026 lieferte Snapshot-GET für `reposition` bei Brotli-Komprimierung
+`W/"…"`, während der aktuelle S3-Metadaten-ETag unverändert `"…"` war. Zwei
+aufeinanderfolgende Leseprüfungen bestätigten denselben Unterschied. Mit
+`Accept-Encoding: identity` lieferte Vercel den starken ETag ohne Komprimierung.
+Die korrigierte CLI verwendete diesen Header und konnte den zuvor mit 412
+abgelehnten Push erfolgreich abschließen: vier Dateien einschließlich beider
+Schemas. Die Revisionsprüfung wurde nicht abgeschwächt und Saves werden nicht
+automatisch wiederholt. Syntax und lokale `no-store, no-transform`-Header für
+normale sowie Fehlerantworten geprüft. Der zusätzliche serverseitige
+`no-transform`-Schutz benötigt noch ein Deployment; der CLI-Fix funktioniert
+bereits mit dem vorhandenen Deployment.

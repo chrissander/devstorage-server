@@ -365,3 +365,10 @@ ohne Pfad/Zugangsdaten/abschließenden Slash konfigurieren. Ungültige Konfigura
 verhindert Start. Ungültige Request-Origin ergibt 403, auch bei OPTIONS.
 REST-CORS bleibt offen. MCP-CORS erlaubt zusätzlich MCP-Protocol-Version.
 SDK-Versionen und Client-Einrichtung stehen in der README.
+
+## ETags hinter komprimierenden Proxys
+
+API-Antworten verwenden `Cache-Control: no-store, no-transform`. Die CLI sendet
+`Accept-Encoding: identity`, damit Vercels Komprimierung einen starken ETag
+nicht mit `W/` abschwächt. Der Server vergleicht Revisionen weiterhin unverändert;
+keine Normalisierung schwacher ETags und keine automatische Save-Wiederholung.

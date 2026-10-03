@@ -60,7 +60,7 @@ export async function buildApp(storage, { logger = true, createFastify = Fastify
   const { allowedOrigins } = mcpConfig();
 
   app.addHook('onRequest', async (request, reply) => {
-    reply.header('Cache-Control', 'no-store');
+    reply.header('Cache-Control', 'no-store, no-transform');
     if (isMcpPath(request.raw.url) && request.headers.origin !== undefined && !allowedOrigins.has(request.headers.origin)) {
       fail(403, 'ORIGIN_NOT_ALLOWED', 'Origin ist für MCP nicht freigegeben.');
     }
@@ -88,7 +88,7 @@ export async function buildApp(storage, { logger = true, createFastify = Fastify
     else safe = new ApiError(500, 'INTERNAL_ERROR', 'Interner Serverfehler.');
     if (safe.statusCode >= 500) request.log.error({ code: safe.code, requestId: request.id }, 'Anfrage fehlgeschlagen.');
     if (safe.statusCode === 401) reply.header('WWW-Authenticate', 'Bearer');
-    reply.header('Cache-Control', 'no-store');
+    reply.header('Cache-Control', 'no-store, no-transform');
     if (!isMcpPath(request.raw.url)) reply.header('Access-Control-Allow-Origin', '*').header('Access-Control-Expose-Headers', 'ETag');
     return json(reply, { error: {
       code: safe.code, message: safe.message,
