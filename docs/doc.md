@@ -372,3 +372,17 @@ API-Antworten verwenden `Cache-Control: no-store, no-transform`. Die CLI sendet
 `Accept-Encoding: identity`, damit Vercels Komprimierung einen starken ETag
 nicht mit `W/` abschwächt. Der Server vergleicht Revisionen weiterhin unverändert;
 keine Normalisierung schwacher ETags und keine automatische Save-Wiederholung.
+
+## MCP: Änderungen abstimmen, nur auf Auftrag speichern
+
+Die MCP-Initialisierung liefert Server-Anweisungen für einen redaktionellen
+Ablauf: Änderungen mit dem Nutzer besprechen, Entwürfe im Gespräch halten,
+keine automatischen Saves. save_json_file ausschließlich auf ausdrücklichen
+Nutzerauftrag zum Speichern oder Übernehmen in den Storage verwenden. Wünsche
+nach Vorschlägen oder Überarbeitung sind keine Speicherfreigabe. Abgestimmte
+Änderungen pro Datei bündeln; ein klarer Speicherauftrag braucht keine redundante
+Bestätigung. Bei Konflikten neu lesen und geänderte Vorschläge abstimmen.
+Schemafehler im Entwurf mit dem Nutzer klären statt automatisch erneut zu speichern.
+Lese- und Speicherwerkzeugbeschreibungen wiederholen diese Arbeitsweise.
+Dies ist eine Anweisung an den Agenten, keine serverseitige Freigabesperre;
+Tool-Parameter, Berechtigungen und Revisionsprüfung bleiben unverändert.
