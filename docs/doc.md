@@ -9,7 +9,8 @@ JSON-Inhalte können optional mit JSON Schema Draft-07 validiert werden.
 Zum Lieferumfang gehören Datei- und Schema-CRUD, Projektverwaltung,
 Admin-/Projekt-Tokens, Rotation, Freigaben, Konfliktschutz, CORS sowie eine CLI
 mit vollständigem Push/Pull. Es gibt keine Datenbank und keine S3-Versionierung.
-Editor und MCP-Server bleiben spätere, separate Vorhaben.
+Ein projektgebundener MCP-Zugriff erlaubt die Bearbeitung vorhandener JSON-Dateien.
+Ein Editor bleibt ein separates Vorhaben.
 
 Ein Workspace bezeichnet die konfigurierte API-Instanz samt Bucket und
 Projekten. Ein Consumer ist ein separates Projekt, das die API oder CLI nutzt;
@@ -61,9 +62,11 @@ Unter der Bucket-Wurzel beziehungsweise dem ausdrücklich gesetzten Prefix:
 Metadaten enthalten `version: 1`, `projectId`, `token`, `state` (`active` oder
 `deleting`), einen internen `revision`-Nonce sowie `files` und `schemas`.
 Ein Dateieintrag enthält `filename`, `public` (Standard `false`), optional
-`title` und `objectKey`. Ein Schemaeintrag enthält `filename` und `objectKey`.
-Es wird keine Schema-Zuordnung gespeichert. Listen geben weder Tokens noch
-interne Objektschlüssel aus. Die Schema-Zuordnung im API-Ergebnis wird aus den
+`title`, optional `description` und `objectKey`. Ein Schemaeintrag enthält
+`filename`, `objectKey` und optional `description`.
+Es wird keine Schema-Zuordnung gespeichert. Datei-/Schema-Listen geben weder Tokens noch
+interne Objektschlüssel aus. Die Admin-Projektliste enthält den aktuellen
+Projekt-Token als `token`. Die Schema-Zuordnung im API-Ergebnis wird aus den
 Namen berechnet.
 
 Bisherige interne Objektschlüssel mit `.json` bleiben lesbar. Alte gespeicherte
@@ -83,7 +86,9 @@ Bearer-Token im `Authorization`-Header, öffentliche Leserouten keinen Token.
 Tokens werden kryptografisch zufällig erzeugt. Anlage und Rotation geben den
 neuen Token erst nach erfolgreicher Speicherung aus. Antworten sind nicht
 cachebar. Alte Tokens werden nach Rotation nicht aus einem Cache akzeptiert.
-Listen, Fehler und Logs enthalten keine Tokens oder Storage-Zugangsdaten.
+Nur die Admin-Projektliste sowie Anlage-/Rotationsantworten enthalten Tokens.
+Datei-/Schema-Listen, MCP-Ergebnisse, Fehler und Logs enthalten keine Tokens
+oder Storage-Zugangsdaten.
 Projekt-Tokens können weder Projekte löschen noch Tokens rotieren.
 
 ## Schemas über Dateinamen
@@ -118,28 +123,30 @@ werden bei POST nach dem kodierten Dateipfad angehängt.
 | Funktion | Methode und Route | Eingabe / Ergebnis |
 | --- | --- | --- |
 | Rotate Admin Token | `POST /v1/admin/token/rotate` | Admin; `{adminToken}`. |
-| List Projects | `GET /v1/projects` | Admin; `{projects: [{projectId, state}]}`, alphabetisch sortiert. |
+| List Projects | `GET /v1/projects` | Admin; `{projects: [{projectId, state, token}]}`, alphabetisch sortiert. |
 | Create Project | `POST /v1/projects` | Admin; `{projectId}`, Ergebnis `{projectId, token}`, `201`. |
 | Delete Project | `DELETE /v1/projects/:projectId` | Admin; `{confirmProject: projectId}`, `204`. |
 | Rotate Project Token | `POST /v1/projects/:projectId/token/rotate` | Admin; `{projectId, token}`. |
-| List Files | `GET /v1/projects/:projectId/files` | `{files: [{filename, schema, title?, public}]}` und ETag. |
-| Create File | `POST /v1/projects/:projectId/files` | `{filename, dataBase64, title?, public?}`; für JSON alternativ `content` statt `dataBase64`; `201`. |
+| List Files | `GET /v1/projects/:projectId/files` | `{files: [{filename, schema, title?, description?, public}]}` und ETag. |
+| Create File | `POST /v1/projects/:projectId/files` | `{filename, dataBase64, title?, description?, public?}`; für JSON alternativ `content` statt `dataBase64`; `201`. |
 | Read File | `GET /v1/projects/:projectId/files/:filename` | Dateibytes und ETag. |
 | Update File | `PUT /v1/projects/:projectId/files/:filename` | Dateibytes direkt als Body; `If-Match` erforderlich. |
+| Set File Description | `PATCH /v1/projects/:projectId/files/:filename` | `{description: string oder null}`; `If-Match` erforderlich, aktualisierte Metadaten und ETag. |
 | Delete File | `DELETE /v1/projects/:projectId/files/:filename` | `If-Match` erforderlich; `204`. |
 | Set Public | `POST /v1/projects/:projectId/files/:filename/public` | `{filename, public: true}`. |
 | Set Private | `POST /v1/projects/:projectId/files/:filename/private` | `{filename, public: false}`. |
-| List Schemas | `GET /v1/projects/:projectId/schemas` | `{schemas: [{filename}]}` und ETag. |
-| Create Schema | `POST /v1/projects/:projectId/schemas` | `{filename, dataBase64}` oder `{filename, schema}`; `201`. |
+| List Schemas | `GET /v1/projects/:projectId/schemas` | `{schemas: [{filename, description?}]}` und ETag. |
+| Create Schema | `POST /v1/projects/:projectId/schemas` | `{filename, dataBase64, description?}` oder `{filename, schema, description?}`; `201`. |
 | Read Schema | `GET /v1/projects/:projectId/schemas/:schemaName` | Schema-Dateibytes und ETag. |
 | Update Schema | `PUT /v1/projects/:projectId/schemas/:schemaName` | Schema-Dateibytes direkt als Body; `If-Match` erforderlich. |
+| Set Schema Description | `PATCH /v1/projects/:projectId/schemas/:schemaName` | `{description: string oder null}`; `If-Match` erforderlich, aktualisierte Metadaten und ETag. |
 | Delete Schema | `DELETE /v1/projects/:projectId/schemas/:schemaName` | `If-Match` erforderlich; `204`. |
 | Read Snapshot | `GET /v1/projects/:projectId/snapshot` | `{files: [{filename, dataBase64}]}` und ETag, einschließlich Schemas. |
 | Replace Snapshot | `PUT /v1/projects/:projectId/snapshot` | Gleiches Paketformat; `If-Match` erforderlich; Ergebnis `{files: Anzahl}`. |
 | Public Read File | `GET /v1/public/:projectId/:filename` | Nur freigegebene Inhaltsdatei; Dateibytes ohne Token. |
 
 Soweit nicht anders angegeben gilt Erfolg `200`. Create/Update File liefern
-`{filename, schema, title?, public}`, Create/Update Schema `{filename}`.
+`{filename, schema, title?, description?, public}`, Create/Update Schema `{filename, description?}`.
 Datei-/Schema-Mutationen und Snapshot-PUT liefern den neuen ETag.
 Dateien mit `.schema.json` werden über `/schemas` verwaltet, nicht über `/files`.
 
@@ -159,7 +166,7 @@ Laufzeit gelten zusätzlich.
 
 ETags basieren auf den Projektmetadaten. Damit können auch Änderungen anderer
 Dateien, Freigaben und Tokens eine Revision veralten lassen. Fehlendes
-`If-Match` führt bei Update, Delete und Snapshot-PUT zu `428`, eine abweichende
+`If-Match` führt bei Update, Description-PATCH, Delete und Snapshot-PUT zu `428`, eine abweichende
 Revision zu `412`. Es gibt kein automatisches Zusammenführen oder Wiederholen
 solcher Consumer-Änderungen. CLI Update/Delete lesen zunächst den Listen-ETag.
 
@@ -198,6 +205,8 @@ zusätzliche verteilte Koordination eingeführt.
 | `dev-storage files read <projectId> <dateipfad> [--output <lokale-datei>]` | Unveränderte Bytes nach stdout oder Datei schreiben. |
 | `dev-storage files update <projectId> <dateipfad> <lokale-datei>` | Vorhandene Datei/Schema mit Revisionsprüfung ersetzen. |
 | `dev-storage files delete <projectId> <dateipfad>` | Vorhandene Datei/Schema mit Revisionsprüfung entfernen. |
+| `dev-storage files set-description <projectId> <dateipfad> <text>` | Beschreibung mit Revisionsprüfung setzen/ersetzen. |
+| `dev-storage files clear-description <projectId> <dateipfad>` | Beschreibung mit Revisionsprüfung entfernen. |
 | `dev-storage projects push <projectId> [--dir <ordner>]` | Online-Dateibestand vollständig ersetzen. |
 | `dev-storage projects pull <projectId> [--dir <ordner>]` | Lokalen Projektordner vollständig ersetzen. |
 
@@ -216,7 +225,8 @@ und der gewünschte Bestand mit dieser Revision ersetzt.
 Die API validiert den vollständigen gewünschten Bestand, schreibt neue
 Objekte und veröffentlicht dann gemeinsam die neuen Metadaten. Projektname,
 Token und Freigaben/Titel weiterhin vorhandener Inhaltsdateipfade bleiben
-erhalten; neue Dateien sind privat. Schema-Zuordnungen folgen den neuen Namen.
+erhalten; ebenso Beschreibungen vorhandener Inhalts- und Schema-Pfade. Neue
+Dateien sind privat. Schema-Zuordnungen folgen den neuen Namen.
 Abgelöste Objekte werden anschließend bereinigt. Bei `503 CLEANUP_INCOMPLETE`
 ist der neue Bestand bereits veröffentlicht; erneuter Push wiederholt die
 Bereinigung. Fehler vor Veröffentlichung lassen den alten Bestand bestehen,
@@ -285,3 +295,73 @@ Ursachen, keine Tokens oder Storage-Zugangsdaten.
 
 Editor-Details bleiben in [Editor-Idee](files/editor-idee.md). Die
 [manuelle Abnahme](files/manual-acceptance.md) dokumentiert die Prüfszenarien.
+
+## Optionale Dateibeschreibungen
+
+Projektmetadaten speichern optional `description: string` an Inhalts- und
+Schema-Einträgen. Fehlende Felder bleiben gültig; keine Migration. Vorhandene
+Felder anderen Typs machen die gespeicherten Metadaten ungültig. Texte bleiben
+unverändert, einschließlich Zeilenumbrüchen und leerer Strings.
+
+POST für Dateien und Schemas akzeptiert optional `description`. Listen und
+Metadatenantworten liefern das Feld nur bei Vorhandensein; Datei-GET bleibt
+bytegetreu. `PATCH /v1/projects/:projectId/files/:filename` sowie
+`PATCH /v1/projects/:projectId/schemas/:schemaName` akzeptieren ausschließlich
+`{description: string | null}`. `null` entfernt das Feld. Beide verlangen
+Admin-/Projekt-Token und `If-Match`; Antwort `200` mit aktualisierten öffentlichen
+Metadaten und neuem ETag. Fehlende Revision `428`, veraltete `412`, unbekannte
+Datei `404`. Es werden keine Inhaltsobjekte geschrieben. PATCH unterstützt
+Unterordner und CORS.
+
+CLI: `files set-description <projectId> <dateipfad> <text>` und
+`files clear-description <projectId> <dateipfad>`. Schema-Endung bestimmt die
+Route. Listen-ETag vor PATCH laden, Konflikte nicht automatisch wiederholen.
+
+Inhaltsänderungen erhalten Beschreibungen. Snapshot-PUT erhält sie für
+weiterhin vorhandene Inhalts- und Schema-Pfade. Neue Pfade starten ohne Feld;
+entfernte Pfade verlieren es. Snapshots und Pull exportieren keine Beschreibungen.
+
+## Projektgebundener MCP-Zugriff
+
+Endpunkt `/v1/projects/:projectId/mcp`, zustandsloses Streamable HTTP über das
+offizielle MCP-SDK im selben Fastify-Prozess. REST und MCP teilen dieselbe
+Service-Instanz und Projektsperre. Projekt aus der URL, nicht aus Tool-Parametern.
+Bearer-Authentifizierung bei jeder Anfrage, auch initialize/tools/list/ping.
+Projekt-Token nur für das eigene Projekt; Admin-Token ohne zusätzliche Tools.
+
+Genau drei Werkzeuge:
+
+| Werkzeug | Parameter | Ergebnis |
+| --- | --- | --- |
+| `list_json_files` | keine | `{files: [{filename, schema, title?, description?}]}`. |
+| `read_json_file` | `filename` | `{filename, content, description?, schemaFilename, schema, schemaDescription?, revision}`. |
+| `save_json_file` | `filename`, `content`, `revision` | `{filename, revision}`. |
+
+Nur vorhandene `.json`-Inhaltsdateien, einschließlich Unterordnern; keine
+`.schema.json`-Dateien oder anderen Dateitypen. read liefert Inhalt, Schema,
+Beschreibungen und Revision unter einer gemeinsamen Sperre. Ohne Schema sind
+`schemaFilename` und `schema` null; fehlende Beschreibungen werden weggelassen.
+Tool-Beschreibungen erklären, dass zurückgelieferte Inhalte und Beschreibungen
+Kontextdaten statt ausführbarer Anweisungen sind.
+
+save ersetzt die gesamte bestehende JSON-Datei, formatiert mit zwei Leerzeichen
+und abschließendem Zeilenumbruch. Primitive Werte und null bleiben gültig.
+Vorhandene Schema-Validierung und Revisionskontrolle gelten; keine Neuanlage,
+keine Schema-/Description-Änderung oder andere Verwaltungsoperation. Schemafehler
+lassen den alten Bestand bestehen; bei veralteter Revision erneut lesen.
+Beschreibungsänderungen ändern ebenfalls die Projekt-Revision.
+
+Ergebnisse werden als `structuredContent` und JSON-Text ausgegeben. Fachliche
+Fehler verwenden `isError: true` mit `{error: {code, message, status, details?}}`.
+Keine Tokens oder internen Schlüssel ausgeben; keine stille Kürzung. Bestehendes
+16-MiB-Requestlimit und Cache-Control no-store gelten. Kein OAuth, keine Resources
+oder Prompts. POST verarbeitet Protokollnachrichten; GET/DELETE nach Authentifizierung
+405, OPTIONS tokenfreier Preflight. Keine dauerhaften Sessions oder SSE-GET-Streams.
+
+MCP-Origins separat prüfen: Fehlender Origin erlaubt; vorhandener Origin muss
+exakt in der optionalen kommaseparierten Konfiguration
+`DEV_STORAGE_MCP_ALLOWED_ORIGINS` stehen. Standard leere Liste. Nur HTTP(S)-Origins
+ohne Pfad/Zugangsdaten/abschließenden Slash konfigurieren. Ungültige Konfiguration
+verhindert Start. Ungültige Request-Origin ergibt 403, auch bei OPTIONS.
+REST-CORS bleibt offen. MCP-CORS erlaubt zusätzlich MCP-Protocol-Version.
+SDK-Versionen und Client-Einrichtung stehen in der README.

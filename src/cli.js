@@ -16,6 +16,8 @@ dev-storage files create <projectId> <dateipfad> <lokale-datei>
 dev-storage files read <projectId> <dateipfad> [--output <lokale-datei>]
 dev-storage files update <projectId> <dateipfad> <lokale-datei>
 dev-storage files delete <projectId> <dateipfad>
+dev-storage files set-description <projectId> <dateipfad> <beschreibung>
+dev-storage files clear-description <projectId> <dateipfad>
 dev-storage projects push <projectId> [--dir <ordner>]
 dev-storage projects pull <projectId> [--dir <ordner>]`;
 
@@ -66,6 +68,7 @@ async function main() {
   const commands = new Map([
     ['workspace init', 2], ['admin rotate-token', 2], ['projects list', 2],
     ['projects create', 3], ['projects delete', 3], ['projects rotate-token', 3],
+    ['files set-description', 5], ['files clear-description', 4],
     ['files create', 5], ['files read', 4], ['files update', 5], ['files delete', 4],
     ['projects push', 3], ['projects pull', 3],
   ]);
@@ -111,8 +114,11 @@ async function main() {
       const etag = revision(listing);
       const entries = (await listing.json())[kind];
       if (!entries.some(entry => entry.filename === remoteName)) throw new Error(`Datei nicht gefunden: ${remoteName}`);
-      await request(action === 'update' ? 'PUT' : 'DELETE', path, { bytes, etag });
-      console.error(`Datei ${action === 'update' ? 'gespeichert' : 'gelöscht'}: ${remoteName}`);
+      const descriptionChange = action === 'set-description' || action === 'clear-description';
+      await request(descriptionChange ? 'PATCH' : action === 'update' ? 'PUT' : 'DELETE', path, {
+        bytes, etag, ...(descriptionChange ? { body: { description: action === 'clear-description' ? null : localName } } : {}),
+      });
+      console.error(`Datei ${action === 'delete' ? 'gelöscht' : 'gespeichert'}: ${remoteName}`);
     }
     return;
   }

@@ -1,4 +1,6 @@
 import Fastify from 'fastify';
+import { mcpConfig } from './config.js';
+import { handleMcp, isMcpPath } from './mcp.js';
 import cors from '@fastify/cors';
 import { ApiError, StorageConflict, conflict, fail } from './errors.js';
 import { projectPattern, filenamePattern, isObject } from './model.js';
@@ -41,8 +43,8 @@ function json(reply, data, status = 200, etag) {
   return reply.code(status).type('application/json; charset=utf-8').send(JSON.stringify(data));
 }
 
-export async function buildApp(storage, { logger = true } = {}) {
-  const app = Fastify({
+export async function buildApp(storage, { logger = true, createFastify = Fastify } = {}) {
+  const app = createFastify({
     logger: logger === true ? {
       redact: ['req.headers.authorization'],
       serializers: { req: req => ({ method: req.method, url: req.url?.split('?')[0] }) },
@@ -55,14 +57,20 @@ export async function buildApp(storage, { logger = true } = {}) {
   });
   const service = new Service(storage, app.log);
   const routes = [];
+  const { allowedOrigins } = mcpConfig();
 
-  app.addHook('onRequest', async (_request, reply) => { reply.header('Cache-Control', 'no-store'); });
+  app.addHook('onRequest', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    if (isMcpPath(request.raw.url) && request.headers.origin !== undefined && !allowedOrigins.has(request.headers.origin)) {
+      fail(403, 'ORIGIN_NOT_ALLOWED', 'Origin ist für MCP nicht freigegeben.');
+    }
+  });
   await app.register(cors, { delegator: (request, callback) => {
     const path = request.raw.url.split('?')[0];
     const methods = routes.filter(route => route.pattern.test(path)).map(route => route.method);
     callback(null, {
-      origin: '*', methods: [...new Set([...methods, 'OPTIONS'])],
-      allowedHeaders: ['Authorization', 'Content-Type', 'If-Match'],
+      origin: isMcpPath(path) ? (request.headers.origin && allowedOrigins.has(request.headers.origin) ? request.headers.origin : false) : '*', methods: [...new Set([...methods, 'OPTIONS'])],
+      allowedHeaders: ['Authorization', 'Content-Type', 'If-Match', 'MCP-Protocol-Version'],
       exposedHeaders: ['ETag'], credentials: false, strictPreflight: false,
     });
   } });
@@ -80,7 +88,8 @@ export async function buildApp(storage, { logger = true } = {}) {
     else safe = new ApiError(500, 'INTERNAL_ERROR', 'Interner Serverfehler.');
     if (safe.statusCode >= 500) request.log.error({ code: safe.code, requestId: request.id }, 'Anfrage fehlgeschlagen.');
     if (safe.statusCode === 401) reply.header('WWW-Authenticate', 'Bearer');
-    reply.header('Cache-Control', 'no-store').header('Access-Control-Allow-Origin', '*').header('Access-Control-Expose-Headers', 'ETag');
+    reply.header('Cache-Control', 'no-store');
+    if (!isMcpPath(request.raw.url)) reply.header('Access-Control-Allow-Origin', '*').header('Access-Control-Expose-Headers', 'ETag');
     return json(reply, { error: {
       code: safe.code, message: safe.message,
       ...(safe.details ? { details: safe.details } : {}),
@@ -113,6 +122,10 @@ export async function buildApp(storage, { logger = true } = {}) {
     });
   }
 
+  for (const method of ['POST', 'GET', 'DELETE']) {
+    route(method, '/v1/projects/:projectId/mcp', (req, reply) => handleMcp(req, reply, service, bearer(req)));
+  }
+
   route('POST', '/v1/admin/token/rotate', async (req, reply) => json(reply, await service.rotateAdmin(bearer(req))));
   route('GET', '/v1/projects', async (req, reply) => json(reply, await service.listProjects(bearer(req))));
   route('POST', '/v1/projects', async (req, reply) => json(reply, await service.createProject(bearer(req), req.body.projectId), 201), {
@@ -143,6 +156,10 @@ export async function buildApp(storage, { logger = true } = {}) {
       const result = kind === 'files' ? await service.saveFile(...args) : await service.saveSchema(...args);
       return json(reply, result.data, 200, result.etag);
     }, { rawBody: true });
+    route('PATCH', `${base}/:${parameter}`, async (req, reply) => {
+      const result = await service.setDescription(bearer(req), req.params.projectId, kind, req.params[parameter], req.body.description, req.headers['if-match']);
+      return json(reply, result.data, 200, result.etag);
+    }, { body: objectBody({ description: { type: ['string', 'null'] } }, ['description']) });
     route('DELETE', `${base}/:${parameter}`, async (req, reply) => {
       const result = await service.deleteFile(bearer(req), req.params.projectId, kind, req.params[parameter], req.headers['if-match']);
       return reply.header('ETag', result.etag).code(204).send();
@@ -157,11 +174,11 @@ export async function buildApp(storage, { logger = true } = {}) {
   route('POST', '/v1/projects/:projectId/files', async (req, reply) => {
     const result = await service.addFile(bearer(req), req.params.projectId, req.body);
     return json(reply, result.data, 201, result.etag);
-  }, { body: uploadBody('content', { title: { type: 'string' }, public: { type: 'boolean' } }) });
+  }, { body: uploadBody('content', { title: { type: 'string' }, description: { type: 'string' }, public: { type: 'boolean' } }) });
   route('POST', '/v1/projects/:projectId/schemas', async (req, reply) => {
     const result = await service.addSchema(bearer(req), req.params.projectId, req.body);
     return json(reply, result.data, 201, result.etag);
-  }, { body: uploadBody('schema') });
+  }, { body: uploadBody('schema', { description: { type: 'string' } }) });
   for (const visibility of ['public', 'private']) {
     route('POST', `/v1/projects/:projectId/files/:filename/${visibility}`, async (req, reply) => {
       const result = await service.setPublic(bearer(req), req.params.projectId, req.params.filename, visibility === 'public');

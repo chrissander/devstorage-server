@@ -52,3 +52,45 @@ ist im [Live-Prüfbericht](live-acceptance.md) dokumentiert. Dort stehen auch de
 gefundene und behobene Fehler sowie die noch offenen Prüfungen für Deployment
 und große Bestände. Die ursprüngliche Sandbox-Netzwerksperre wurde für die
 autorisierten Live-Aufrufe durch gezielte Freigaben überwunden.
+
+## MCP und redaktionelle Beschreibungen
+
+| Szenario | Erwartung |
+| --- | --- |
+| Bestehende Metadaten | Ohne description weiterhin gültig; hinterlegte Nicht-Strings als ungültig erkennen. |
+| Beschreibung pflegen | Datei-/Schema-POST mit description; PATCH setzt/ersetzt Text einschließlich Zeilenumbrüchen und leerem String; null entfernt das Feld. |
+| Nur Metadaten | PATCH schreibt keine Inhaltsobjekte, verändert keine Dateibytes und erneuert den Projekt-ETag. |
+| PATCH-Fehler | Fehlendes If-Match 428, veraltet 412, fehlende Datei 404, falscher Typ oder zusätzliche Felder 400. |
+| CLI | set-description und clear-description funktionieren mit verschachtelten Datei- und Schema-Pfaden; keine S3-Zugangsdaten erforderlich. |
+| Push/Pull | Beschreibung für denselben Datei-/Schema-Pfad erhalten; neue/entfernte Pfade ohne Beschreibung. Snapshot/Pull enthält weiterhin nur Dateien. |
+| MCP-Verbindung | Offiziellen Streamable-HTTP-Client mit Projekt-Token verbinden; initialize und tools/list anbieten, exakt drei Werkzeuge. |
+| MCP-Lesen | Nur JSON-Inhalte auflisten; read liefert gleichzeitig Inhalt, Datei-/Schema-Description, vollständiges Schema und Revision. Fehlende Schema-Zuordnung liefert null. |
+| MCP-Speichern | Vollständiges JSON einschließlich null/Primitiven speichern; Schemafehler lassen alten Inhalt bestehen. Beschreibung bleibt erhalten. |
+| Redaktioneller Konflikt | read, Beschreibung per CLI/PATCH ändern, save mit alter Revision: REVISION_MISMATCH, erneut lesen. |
+| Begrenzung | Keine Schema-/Binärdateien lesen oder bearbeiten, keine Dateien anlegen/löschen und keine Beschreibungen über MCP ändern. Admin hat dieselben drei Tools. |
+| Rechte | Fehlender/falscher Token 401, fremder Projekt-Token 403, rotierter Token sofort ungültig. Löschzustand blockiert auch MCP. |
+| Origin | Ohne Origin erlaubt; nicht erlaubte Origin 403 auch für OPTIONS; konfigurierte Origin mit Bearer verwendbar. REST-CORS bleibt unverändert. |
+| Protokoll | JSON- und strukturierte Ergebnisse stimmen überein; fachliche Fehler mit isError; Antworten no-store. GET/DELETE 405, falscher Content-Type 415. |
+
+Nach Installation der Pakete durch den Betreiber wurden am 03.10.2026 die
+neuen Service-Funktionen, REST-PATCH und CLI-Beschreibungskommandos mit flüchtigem
+Storage und Fastify-Injection geprüft. Der tatsächliche MCP-SDK-Transport wurde
+über Fastify-Injection geprüft: initialize, tools/list, alle drei Tools,
+Schemafehler, veraltete Revisionen nach Inhalts-/Beschreibungsänderungen,
+primitive Werte/null, ausgeschlossene Dateitypen, fehlende Dateien und Token-
+Rotation. Datei-/Schema-Beschreibungen blieben beim Snapshot-Ersetzen erhalten;
+PATCH erzeugte keine Inhaltsobjekte. Origin-Ablehnung und erlaubte Preflights
+sowie Verhalten bei zunächst fehlendem SDK wurden ebenfalls geprüft.
+
+Es wurden keine Testdateien oder Testsuite im Repository angelegt. Keine
+Installation oder Migration durch den Agenten. Deployment und große MCP-Antworten stehen noch aus.
+
+Zusätzlich wurde der laufende localhost-Server mit dem offiziellen MCP-Client
+gegen den echten Bucket geprüft: Verbindung, exakt drei Werkzeuge, Auflisten,
+Lesen mit Schema/Revision, redaktionelle Beschreibungen per echter CLI für
+Datei und Schema, MCP-Ausgabe beider Beschreibungen, gültiges Speichern,
+Schema-Verstoß ohne Inhaltsänderung und Revisionskonflikte nach Inhalts- sowie
+Beschreibungsänderung. Ausschließlich `test/profile.json` und seine Description
+sowie die Description von `test/profile.schema.json` wurden verwendet. Der
+ursprüngliche Dateiinhalt wurde bytegenau und beide Beschreibungen auf ihren
+ursprünglichen Stand zurückgesetzt. Projekt-Revisionen haben sich dabei geändert.

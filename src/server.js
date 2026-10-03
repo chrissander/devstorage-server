@@ -1,4 +1,6 @@
-import { buildApp } from './app.js';
+// Vercel detects the Fastify import in this server entrypoint.
+import Fastify from 'fastify';
+import { buildApp } from './http-app.js';
 import { storageConfig, serverConfig } from './config.js';
 import { Storage } from './storage.js';
 
@@ -7,7 +9,7 @@ let storage;
 try {
   const listen = serverConfig();
   storage = new Storage(storageConfig());
-  app = await buildApp(storage);
+  app = await buildApp(storage, { createFastify: Fastify });
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.once(signal, () => {
       app.close().catch(() => { process.exitCode = 1; });

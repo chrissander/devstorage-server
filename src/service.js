@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { Locks } from './locks.js';
 import { ApiError, StorageConflict, conflict, fail, unavailable } from './errors.js';
-import { projectId, filename, directoryOf, isProject, workspaceData, projectData, newToken, sameToken, fileInfo, associatedSchema, pairedFile, isSchema, fileKind, checkPaths } from './model.js';
+import { projectId, filename, directoryOf, isProject, workspaceData, projectData, newToken, sameToken, fileInfo, schemaInfo, descriptionInfo, associatedSchema, pairedFile, isSchema, fileKind, checkPaths } from './model.js';
 import { compileSchema, validateContent } from './validation.js';
-import { contentType, parseJson, decodeBase64, uploadBytes } from './files.js';
+import { BODY_LIMIT, contentType, parseJson, decodeBase64, uploadBytes } from './files.js';
 
 export async function initializeWorkspace(storage) {
   const key = storage.workspaceKey();
@@ -69,7 +69,7 @@ export class Service {
     for await (const id of this.storage.projectIds()) {
       if (!isProject(id)) continue;
       const record = await this.project(id);
-      if (record) projects.push({ projectId: id, state: record.data.state });
+      if (record) projects.push({ projectId: id, state: record.data.state, token: record.data.token });
     }
     return { projects: projects.sort((a, b) => a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0) };
   }
@@ -229,8 +229,60 @@ export class Service {
 
   list(token, id, kind) {
     return this.withProject(token, id, async ({ data, etag }) => ({
-      data: { [kind]: data[kind].map(entry => kind === 'files' ? fileInfo(entry, data) : { filename: entry.filename }) }, etag,
+      data: { [kind]: data[kind].map(entry => kind === 'files' ? fileInfo(entry, data) : schemaInfo(entry)) }, etag,
     }));
+  }
+
+  setDescription(token, id, kind, name, description, revision) {
+    if (description !== null && typeof description !== 'string') fail(400, 'INVALID_REQUEST', 'Description muss Text oder null sein.');
+    return this.mutate(token, id, async meta => {
+      const entry = this.entry(meta, kind, name);
+      if (description === null) delete entry.description;
+      else entry.description = description;
+      return { data: kind === 'files' ? fileInfo(entry, meta) : schemaInfo(entry) };
+    }, { needsRevision: true, revision });
+  }
+
+  listJsonFiles(token, id) {
+    return this.withProject(token, id, async ({ data }) => ({
+      files: data.files.filter(entry => entry.filename.endsWith('.json') && !isSchema(entry.filename))
+        .map(entry => {
+          const { public: visibility, ...info } = fileInfo(entry, data);
+          return info;
+        }),
+    }));
+  }
+
+  jsonFilename(name) {
+    filename(name);
+    if (!name.endsWith('.json') || isSchema(name)) fail(400, 'JSON_FILE_REQUIRED', 'Nur JSON-Inhaltsdateien können über MCP bearbeitet werden.');
+  }
+
+  readJsonFile(token, id, name) {
+    this.jsonFilename(name);
+    return this.withProject(token, id, async ({ data, etag }) => {
+      const entry = this.entry(data, 'files', name);
+      const schemaName = associatedSchema(data, name);
+      const schemaEntry = schemaName ? this.entry(data, 'schemas', schemaName) : null;
+      return {
+        filename: name, ...descriptionInfo(entry),
+        content: parseJson(await this.content(entry), true),
+        schemaFilename: schemaName,
+        schema: schemaEntry ? parseJson(await this.content(schemaEntry), true) : null,
+        ...(schemaEntry && Object.hasOwn(schemaEntry, 'description') ? { schemaDescription: schemaEntry.description } : {}),
+        revision: etag,
+      };
+    });
+  }
+
+  async saveJsonFile(token, id, name, content, revision) {
+    this.jsonFilename(name);
+    const encoded = JSON.stringify(content, null, 2);
+    if (encoded === undefined) fail(400, 'INVALID_REQUEST', 'JSON-Inhalt fehlt.');
+    const bytes = Buffer.from(`${encoded}\n`);
+    if (bytes.length > BODY_LIMIT) fail(400, 'INVALID_REQUEST', 'JSON-Datei überschreitet das Größenlimit.');
+    const saved = await this.saveFile(token, id, name, bytes, revision);
+    return { filename: name, revision: saved.etag };
   }
 
   get(token, id, kind, name, publicRead = false) {
@@ -267,6 +319,7 @@ export class Service {
       const entry = {
         filename: body.filename, public: body.public ?? false,
         ...(Object.hasOwn(body, 'title') ? { title: body.title } : {}),
+        ...descriptionInfo(body),
       };
       meta.files.push(entry);
       return { data: fileInfo(entry, meta), objects: [{ entry, bytes }] };
@@ -295,9 +348,9 @@ export class Service {
       this.ensureNew(meta, body.filename);
       const bytes = uploadBytes(body, 'schema');
       await this.validateSchema(meta, body.filename, bytes);
-      const entry = { filename: body.filename };
+      const entry = { filename: body.filename, ...descriptionInfo(body) };
       meta.schemas.push(entry);
-      return { data: { filename: body.filename }, objects: [{ entry, bytes }] };
+      return { data: schemaInfo(entry), objects: [{ entry, bytes }] };
     });
   }
 
@@ -305,7 +358,7 @@ export class Service {
     return this.mutate(token, id, async meta => {
       const entry = this.entry(meta, 'schemas', name);
       await this.validateSchema(meta, name, bytes);
-      return { data: { filename: name }, objects: [{ entry, bytes }], removed: [entry.objectKey] };
+      return { data: schemaInfo(entry), objects: [{ entry, bytes }], removed: [entry.objectKey] };
     }, { needsRevision: true, revision });
   }
 
@@ -330,7 +383,7 @@ export class Service {
   replaceSnapshot(token, id, snapshot, revision) {
     return this.mutate(token, id, async meta => {
       checkPaths(snapshot.files.map(file => file.filename));
-      const previous = new Map(meta.files.map(file => [file.filename, file]));
+      const previous = new Map([...meta.files, ...meta.schemas].map(file => [file.filename, file]));
       const objects = [];
       const validators = new Map();
       meta.files = [];
@@ -343,6 +396,7 @@ export class Service {
           filename: file.filename, public: old?.public ?? false,
           ...(old && Object.hasOwn(old, 'title') ? { title: old.title } : {}),
         };
+        Object.assign(entry, old ? descriptionInfo(old) : {});
         meta[kind].push(entry);
         objects.push({ entry, bytes });
         if (kind === 'schemas') validators.set(file.filename, compileSchema(parseJson(bytes, false, true)));

@@ -43,3 +43,15 @@ export function cliConfig(env = process.env) {
     token: required(env, 'DEV_STORAGE_ADMIN_TOKEN'),
   };
 }
+
+export function mcpConfig(env = process.env) {
+  const origins = (env.DEV_STORAGE_MCP_ALLOWED_ORIGINS ?? '').split(',').map(value => value.trim()).filter(Boolean);
+  for (const origin of origins) {
+    let url;
+    try { url = new URL(origin); } catch { throw new Error('DEV_STORAGE_MCP_ALLOWED_ORIGINS enthält eine ungültige Origin.'); }
+    if (!['http:', 'https:'].includes(url.protocol) || url.origin !== origin) {
+      throw new Error('DEV_STORAGE_MCP_ALLOWED_ORIGINS erwartet HTTP(S)-Origins ohne Pfad, Zugangsdaten oder abschließenden Slash.');
+    }
+  }
+  return { allowedOrigins: new Set(origins) };
+}

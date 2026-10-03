@@ -74,6 +74,7 @@ export function projectData(value, id, prefix) {
         typeof entry.objectKey !== 'string' || !entry.objectKey.startsWith(objectPrefix) ||
         !isFilename(entry.objectKey.slice(objectPrefix.length)) ||
         !/^[a-f0-9-]+(?:\.json)?$/.test(entry.objectKey.split('/').at(-1)) || keys.has(entry.objectKey)) throw unavailable();
+    if (Object.hasOwn(entry, 'description') && typeof entry.description !== 'string') throw unavailable();
     names.add(entry.filename);
     keys.add(entry.objectKey);
   }
@@ -95,7 +96,16 @@ export function fileInfo(entry, meta) {
   return {
     filename: entry.filename,
     schema: associatedSchema(meta, entry.filename),
+    ...descriptionInfo(entry),
     ...(Object.hasOwn(entry, 'title') ? { title: entry.title } : {}),
     public: entry.public,
   };
+}
+
+export function descriptionInfo(entry) {
+  return Object.hasOwn(entry, 'description') ? { description: entry.description } : {};
+}
+
+export function schemaInfo(entry) {
+  return { filename: entry.filename, ...descriptionInfo(entry) };
 }
