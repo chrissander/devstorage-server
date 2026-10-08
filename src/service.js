@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Locks } from './locks.js';
 import { ApiError, StorageConflict, conflict, fail, unavailable } from './errors.js';
 import { projectId, filename, directoryOf, isProject, workspaceData, projectData, newToken, sameToken, fileInfo, schemaInfo, descriptionInfo, associatedSchema, pairedFile, isSchema, fileKind, checkPaths } from './model.js';
-import { compileSchema, validateContent } from './validation.js';
+import { compileSchema, validateContent, validateFileWithSchema } from './validation.js';
 import { BODY_LIMIT, contentType, parseJson, decodeBase64, uploadBytes } from './files.js';
 
 export async function initializeWorkspace(storage) {
@@ -331,6 +331,28 @@ export class Service {
       const entry = this.entry(meta, 'files', name);
       await this.validateFile(meta, name, bytes);
       return { data: fileInfo(entry, meta), objects: [{ entry, bytes }], removed: [entry.objectKey] };
+    }, { needsRevision: true, revision });
+  }
+
+  saveFileWithSchema(token, id, name, body, revision) {
+    return this.mutate(token, id, async meta => {
+      const entry = this.entry(meta, 'files', name);
+      const bytes = decodeBase64(body.dataBase64);
+      const schemaBytes = decodeBase64(body.schemaBase64);
+      const schemaName = validateFileWithSchema(name, bytes, schemaBytes);
+      let schemaEntry = meta.schemas.find(item => item.filename === schemaName);
+      const removed = [entry.objectKey];
+      if (schemaEntry) removed.push(schemaEntry.objectKey);
+      else {
+        this.ensureNew(meta, schemaName);
+        schemaEntry = { filename: schemaName };
+        meta.schemas.push(schemaEntry);
+      }
+      return {
+        data: fileInfo(entry, meta),
+        objects: [{ entry, bytes }, { entry: schemaEntry, bytes: schemaBytes }],
+        removed,
+      };
     }, { needsRevision: true, revision });
   }
 

@@ -14,7 +14,7 @@ dev-storage projects delete <projectId> [--confirm <projectId>]
 dev-storage projects rotate-token <projectId>
 dev-storage files create <projectId> <dateipfad> <lokale-datei>
 dev-storage files read <projectId> <dateipfad> [--output <lokale-datei>]
-dev-storage files update <projectId> <dateipfad> <lokale-datei>
+dev-storage files update <projectId> <dateipfad> <lokale-datei> [--schema <lokales-schema>]
 dev-storage files delete <projectId> <dateipfad>
 dev-storage files set-description <projectId> <dateipfad> <beschreibung>
 dev-storage files clear-description <projectId> <dateipfad>
@@ -62,7 +62,7 @@ function revision(response) {
 
 async function main() {
   const { values, positionals } = parseArgs({
-    options: { confirm: { type: 'string' }, help: { type: 'boolean', short: 'h' }, output: { type: 'string' }, dir: { type: 'string' } },
+    options: { confirm: { type: 'string' }, help: { type: 'boolean', short: 'h' }, output: { type: 'string' }, dir: { type: 'string' }, schema: { type: 'string' } },
     allowPositionals: true, strict: true,
   });
   if (values.help) { console.log(help); return; }
@@ -78,6 +78,7 @@ async function main() {
   if (commands.get(command) !== positionals.length || !commands.has(command) ||
       (values.confirm !== undefined && command !== 'projects delete') ||
       (values.output !== undefined && command !== 'files read') ||
+      (values.schema !== undefined && command !== 'files update') ||
       (values.dir !== undefined && !['projects push', 'projects pull'].includes(command))) throw new Error(`Ungültiger Aufruf.\n${help}`);
   if (id !== undefined) projectId(id);
 
@@ -113,10 +114,23 @@ async function main() {
       console.error(`Datei angelegt: ${remoteName}`);
     } else {
       const bytes = action === 'update' ? await readLocalFile(localName) : undefined;
+      let pair;
+      if (values.schema !== undefined) {
+        const schemaBytes = await readLocalFile(values.schema);
+        const { validateFileWithSchema } = await import('./validation.js');
+        validateFileWithSchema(remoteName, bytes, schemaBytes);
+        pair = { dataBase64: bytes.toString('base64'), schemaBase64: schemaBytes.toString('base64') };
+        encodePayload(pair);
+      }
       const listing = await request('GET', base);
       const etag = revision(listing);
       const entries = (await listing.json())[kind];
       if (!entries.some(entry => entry.filename === remoteName)) throw new Error(`Datei nicht gefunden: ${remoteName}`);
+      if (pair) {
+        await request('PUT', `/projects/${id}/file-pairs/${encodeURIComponent(remoteName)}`, { body: pair, etag });
+        console.error(`Datei und Schema gespeichert: ${remoteName}`);
+        return;
+      }
       const descriptionChange = action === 'set-description' || action === 'clear-description';
       await request(descriptionChange ? 'PATCH' : action === 'update' ? 'PUT' : 'DELETE', path, {
         bytes, etag, ...(descriptionChange ? { body: { description: action === 'clear-description' ? null : localName } } : {}),
@@ -173,5 +187,6 @@ async function main() {
 try { await main(); }
 catch (error) {
   console.error(error instanceof ApiError ? `${error.code}: ${error.message}` : error.message);
+  if (error instanceof ApiError && error.details) console.error(JSON.stringify(error.details, null, 2));
   process.exitCode = 1;
 }

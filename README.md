@@ -227,6 +227,7 @@ npm run cli -- files create test pages/home.json projects/test/pages/home.json
 npm run cli -- files read test pages/home.json
 npm run cli -- files read test images/logo.png --output ./logo.png
 npm run cli -- files update test pages/home.json projects/test/pages/home.json
+npm run cli -- files update test pages/home.json projects/test/pages/home.json --schema projects/test/pages/home.schema.json
 npm run cli -- files delete test pages/home.json
 npm run cli -- files set-description test pages/home.json "Inhalte der Startseite"
 npm run cli -- files clear-description test pages/home.json
@@ -242,6 +243,19 @@ unveränderte Bytes nach stdout oder in `--output`; Statusmeldungen für
 Dateioperationen und Synchronisation gehen nach stderr. Create lehnt bestehende
 Dateien ab, Update und Delete benötigen eine vorhandene Datei. Die CLI liest
 vor Update/Delete den Listen-ETag und sendet ihn als `If-Match`.
+
+Mit `files update ... --schema <lokales-schema>` werden eine bestehende
+JSON-Inhaltsdatei und ihr Schema gemeinsam aktualisiert. Die CLI prüft vor dem
+ersten API-Aufruf beide lokalen Dateien mit derselben Draft-07-Validierung wie
+der Server. Bei Fehlern werden Details mit JSON-Pfaden ausgegeben und nichts
+übertragen. Der Server prüft das neue Paar erneut und veröffentlicht beide
+Dateien atomar mit einer gemeinsamen Revision. Das Schema wird bei Bedarf
+angelegt; sein Online-Pfad ergibt sich aus dem JSON-Pfad (`pages/home.json`
+→ `pages/home.schema.json`), unabhängig vom lokalen Schema-Dateinamen.
+Andere Dateien, Beschreibungen, Titel und Freigaben bleiben unverändert.
+`--schema` ist nur bei `files update` für JSON-Inhaltsdateien erlaubt.
+Die Funktion benötigt auch auf dem Server die Version mit dem neuen
+`file-pairs`-Endpunkt.
 
 Push ersetzt **alle** Online-Dateien und Schemas durch den lokalen Bestand.
 Pull ersetzt **den gesamten** lokalen Projektordner durch den Online-Bestand,
@@ -335,6 +349,7 @@ separaten Ordner-Endpunkte.
 | `POST` | `/v1/projects/:projectId/files` | Upload-Objekt wie unten; `201`: `{filename, schema, title?, description?, public}` und `ETag`. |
 | `GET` | `/v1/projects/:projectId/files/:filename` | `200`: unveränderte Dateibytes mit Content-Type und `ETag`. |
 | `PUT` | `/v1/projects/:projectId/files/:filename` | Dateibytes als Body, `If-Match` erforderlich; `200`: `{filename, schema, title?, description?, public}` und neuer `ETag`. |
+| `PUT` | `/v1/projects/:projectId/file-pairs/:filename` | `{dataBase64, schemaBase64}` für eine vorhandene JSON-Inhaltsdatei und ihr neues oder vorhandenes Schema; `If-Match` erforderlich. Validiert und veröffentlicht beide atomar; `200`: `{filename, schema, title?, description?, public}` und neuer `ETag`. |
 | `PATCH` | `/v1/projects/:projectId/files/:filename` | `{description: string oder null}`, `If-Match` erforderlich; `200` mit aktualisierten Dateimetadaten und neuem `ETag`. |
 | `DELETE` | `/v1/projects/:projectId/files/:filename` | Kein Body, `If-Match` erforderlich; `204` ohne Body und neuer `ETag`. |
 | `POST` | `/v1/projects/:projectId/files/:filename/public` | Kein Body; `200`: `{filename, public: true}` und neuer `ETag`. |

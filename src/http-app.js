@@ -15,7 +15,7 @@ function rewriteFileUrl(request) {
   const queryIndex = request.url.indexOf('?');
   const path = queryIndex < 0 ? request.url : request.url.slice(0, queryIndex);
   const query = queryIndex < 0 ? '' : request.url.slice(queryIndex);
-  const match = /^(\/v1\/(?:projects\/[^/]+\/(files|schemas)|public\/[^/]+)\/)(.+)$/.exec(path);
+  const match = /^(\/v1\/(?:projects\/[^/]+\/(files|schemas|file-pairs)|public\/[^/]+)\/)(.+)$/.exec(path);
   if (!match) return request.url;
   let filename = match[3];
   let action = '';
@@ -165,6 +165,11 @@ export async function buildApp(storage, { logger = true, createFastify = Fastify
       return reply.header('ETag', result.etag).code(204).send();
     });
   }
+  route('PUT', '/v1/projects/:projectId/file-pairs/:filename', async (req, reply) => {
+    const result = await service.saveFileWithSchema(bearer(req), req.params.projectId, req.params.filename, req.body, req.headers['if-match']);
+    return json(reply, result.data, 200, result.etag);
+  }, { body: objectBody({ dataBase64: { type: 'string' }, schemaBase64: { type: 'string' } }, ['dataBase64', 'schemaBase64']) });
+
   function uploadBody(field, properties = {}) {
     return {
       ...objectBody({ filename: name, [field]: {}, dataBase64: { type: 'string' }, ...properties }, ['filename']),

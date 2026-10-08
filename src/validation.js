@@ -1,7 +1,20 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import { ApiError, fail } from './errors.js';
-import { isObject } from './model.js';
+import { isObject, filename, isSchema } from './model.js';
+import { parseJson } from './files.js';
+
+export function validateFileWithSchema(name, bytes, schemaBytes) {
+  filename(name);
+  if (!name.endsWith('.json') || isSchema(name)) {
+    fail(400, 'INVALID_JSON_FILENAME', 'Gemeinsames Update benötigt eine JSON-Inhaltsdatei, keine Schema-Datei.');
+  }
+  const schemaName = name.slice(0, -'.json'.length) + '.schema.json';
+  filename(schemaName);
+  const validate = compileSchema(parseJson(schemaBytes, false, true));
+  validateContent(validate, parseJson(bytes), name);
+  return schemaName;
+}
 
 export function validationDetails(errors) {
   return errors?.map(({ instancePath, schemaPath, keyword, message }) => ({
